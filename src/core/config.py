@@ -1,0 +1,49 @@
+"""Cấu hình toàn cục, nạp từ .env (pydantic-settings)."""
+from __future__ import annotations
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+    # --- Detector backend ---
+    detector_backend: str = "vllm"          # "vllm" | "ollama"
+
+    # --- vLLM (OpenAI-compatible) ---
+    vlm_base_url: str = "http://localhost:8000/v1"
+    vlm_model: str = "Qwen/Qwen3-VL-8B-Instruct-AWQ"
+    vlm_api_key: str = "EMPTY"
+
+    # --- Ollama ---
+    ollama_host: str = "http://localhost:11434"
+    ollama_model: str = "qwen3-vl:8b"
+
+    # --- VLM chung ---
+    vlm_timeout: int = 180
+    vlm_max_pixels: int = 1_500_000         # giới hạn pixel ảnh gửi VLM
+    vlm_temperature: float = 0.0
+
+    # --- Preprocess ---
+    render_dpi: int = 300
+    do_deskew: bool = True
+    deskew_threshold_degrees: float = 0.5
+
+    # --- Box-snap ---
+    snap_pad: int = 8
+    snap_enabled: bool = True
+
+    # --- Output ---
+    output_dir: str = "./output"
+    save_vlm_raw: bool = True
+
+    # --- Logging ---
+    log_level: str = "INFO"
+
+
+settings = Settings()
