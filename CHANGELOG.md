@@ -1,5 +1,21 @@
 # Changelog — exam_parser_vlm
 
+## [Phase 3.3] - 2026-06-06 - Parser JSON khoan dung + cross-page đo ink
+
+### Vấn đề
+- `Expecting value ... (char 426)` (toan8 trang 2): JSON 4B méo/cắt → parser fail cứng → mất cả trang.
+- Đề azota báo "không có câu vắt trang" dù có: heuristic cũ chỉ theo ngưỡng vị trí, không đáng tin.
+
+### Giải pháp
+- **`detectors/parse.py`** (MỚI) — `parse_gpage()` khoan dung: thử nguyên khối → cắt `{...}` →
+  **cứu từng region object hợp lệ** (quét cân bằng ngoặc) khi JSON tổng méo/bị cắt. Không mất cả trang.
+  Hai backend dùng chung, bỏ parse thủ công.
+- **Cross-page đo mật độ ink** (`box_snap.PageInk.ink_ratio`): câu vắt trang được nhận khi đầu trang
+  sau có NỘI DUNG THẬT phía trên câu đầu (ink_ratio > 0.4%) + không có header/section chen — thay vì
+  chỉ dựa ngưỡng vị trí. `crosspage.merge_cross_page` nhận thêm `page_inks`.
+
+---
+
 ## [Phase 3.2] - 2026-06-06 - Bật lại đáp án A/B/C/D + cứu công thức bị cắt + nối ảnh vắt trang
 
 ### Làm rõ yêu cầu

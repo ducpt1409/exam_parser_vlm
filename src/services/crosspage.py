@@ -13,6 +13,7 @@ from src.core.logging import logger
 from src.schemas.geometry import BBox
 from src.schemas.region import Region, RegionClass
 from src.services.assembly import AssemblyResult, Part
+from src.services.box_snap import PageInk
 
 _BLOCKER_CLASSES = (
     RegionClass.EXAM_HEADER,
@@ -41,6 +42,7 @@ def merge_cross_page(
     result: AssemblyResult,
     page_sizes: list[tuple[int, int]],
     regions_per_page: list[list[Region]] | None = None,
+    page_inks: list[PageInk] | None = None,
 ) -> None:
     doc = result.document
     q_by_id = {q.id: q for q in doc.questions}
@@ -74,15 +76,19 @@ def merge_cross_page(
         page_h = page_sizes[p + 1][1] if p + 1 < len(page_sizes) else 0
         flag_signal = last.continues_to_next or first.continues_from_prev
         heuristic_signal = False
-        if regions_per_page is not None and page_h:
-            regs = regions_per_page[p + 1]
-            # đầu trang sau có khoảng trống lớn phía trên câu đầu + không có header/section chen vào
-            if first.y_top > 0.12 * page_h and not _has_blocker_above(regs, first.y_top):
+        xl, xr = first.col_bounds
+        lead_box: BBox = (xl, 0.0, xr, max(1.0, first.y_top))
+        if page_h and first.y_top > 0.05 * page_h:
+            regs = regions_per_page[p + 1] if regions_per_page else []
+            no_blocker = not _has_blocker_above(regs, first.y_top)
+            # có NỘI DUNG THẬT phía trên câu đầu (đo mật độ ink) + không có header/section chen
+            has_ink = True
+            if page_inks is not None and p + 1 < len(page_inks):
+                has_ink = page_inks[p + 1].ink_ratio(lead_box) > 0.004
+            if no_blocker and has_ink:
                 heuristic_signal = True
 
         if flag_signal or heuristic_signal:
-            xl, xr = first.col_bounds
-            lead_box: BBox = (xl, 0.0, xr, max(1.0, first.y_top))
             last.full_parts.append(Part(p + 1, lead_box))
             last.stem_parts.append(Part(p + 1, lead_box))
             lq = q_by_id.get(last.q_id)

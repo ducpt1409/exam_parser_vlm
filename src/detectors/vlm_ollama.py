@@ -14,6 +14,7 @@ from src.core.config import settings
 from src.core.logging import logger
 from src.detectors.base import RegionDetector
 from src.detectors.image_util import encode_jpeg_b64
+from src.detectors.parse import parse_gpage
 from src.detectors.prompt import SYSTEM_PROMPT, build_user_prompt, gpage_to_regions
 from src.detectors.schema import GPage
 from src.schemas.region import Region
@@ -59,16 +60,7 @@ class OllamaDetector(RegionDetector):
             return []
 
         self.last_raw = content
-        try:
-            page = GPage.model_validate_json(content)
-        except Exception:
-            try:
-                start, end = content.index("{"), content.rindex("}") + 1
-                page = GPage.model_validate(json.loads(content[start:end]))
-            except Exception as e:  # noqa: BLE001
-                logger.error(f"[ollama] trang {page_index}: parse JSON lỗi — {e}")
-                return []
-
+        page = parse_gpage(content, page_index)
         regions = gpage_to_regions(page, page_index, page_w, page_h,
                                    drop_answers=not self._detect_answers)
         logger.info(f"[ollama] trang {page_index}: {len(regions)} vùng")

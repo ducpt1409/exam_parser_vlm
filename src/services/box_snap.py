@@ -66,3 +66,12 @@ class PageInk:
 
         snapped = (nx1 - pad, ny1 - pad, nx2 + pad, ny2 + pad)
         return clamp_bbox(snapped, self.width, self.height)
+
+    def ink_ratio(self, bbox: BBox) -> float:
+        """Tỉ lệ pixel có ink trong bbox (0..1). Dùng để biết vùng có nội dung thật không."""
+        x1, y1, x2, y2 = clamp_bbox(bbox, self.width, self.height)
+        ix1, iy1, ix2, iy2 = int(x1), int(y1), int(x2), int(y2)
+        if ix2 - ix1 < 1 or iy2 - iy1 < 1:
+            return 0.0
+        sub = self.ink[iy1:iy2, ix1:ix2]
+        return float(sub.sum()) / sub.size if sub.size else 0.0
