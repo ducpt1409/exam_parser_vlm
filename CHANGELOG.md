@@ -1,5 +1,30 @@
 # Changelog — exam_parser_vlm
 
+## [Phase 3.1] - 2026-06-06 - Bỏ detect đáp án (mặc định) + prompt cứng + cap box theo VLM
+
+### Vấn đề (chạy thật đề Tiếng Anh, 4B-FP8)
+- Khoanh cả từng đáp án (chưa cần) → nhiễu + bắt 4B liệt kê ~250 vùng/đề → quá tải.
+- 2 câu sát nhau bị gộp làm 1; cắt thiếu/thừa; cắt cả ô trắng dưới đáp án. Đề dày càng sai.
+
+### Nguyên nhân
+- Một phần **model 4B** đuối khi nhiều mục tiêu/trang (sót marker → gộp câu).
+- Một phần **prompt/code**: ta bắt detect cả answer_option; full box kéo tới đỉnh câu kế (nuốt ô trắng).
+
+### Giải pháp
+- **`DETECT_ANSWERS` (mặc định false)**: chỉ khoanh VÙNG CÂU HỎI trọn vẹn (gồm phương án bên trong),
+  KHÔNG tách đáp án → giảm ~5× số mục tiêu → 4B chính xác hơn, ít gộp câu, JSON ngắn (ít truncate).
+  - `core/config.py`: thêm `detect_answers`.
+  - `detectors/prompt.py`: tách `build_user_prompt(detect_answers)` — 2 biến thể; biến thể no-answers
+    dặn "mỗi Question N là 1 vùng riêng, cấm gộp; box dừng ở phương án cuối, không lấn ô trống/câu kế".
+  - `vlm_vllm.py`/`vlm_ollama.py`: dùng prompt động + `drop_answers` khi map region.
+- **`assembly.py`**: khi không tách đáp án, full box dùng MÉP DƯỚI box VLM (cap trong band, +8px)
+  thay vì kéo tới đỉnh câu kế → bớt nuốt ô trắng / lấn câu sau.
+
+### Còn lại (do model — cần test 8B để tách bạch)
+- Gộp 2 câu / sót câu trên trang dày: chủ yếu giới hạn 4B. Lên 8B/32B (khi có VRAM) sẽ giảm.
+
+---
+
 ## [Phase 3] - 2026-06-05 - Lõi pipeline VLM grounding (chạy được, kiểm crop)
 
 ### Mục tiêu

@@ -11,31 +11,52 @@ SYSTEM_PROMPT = (
     "Toạ độ luôn theo thang 0-1000 so với chiều rộng và cao của ảnh."
 )
 
-USER_PROMPT = """Phân tích ảnh MỘT TRANG đề thi. Liệt kê TẤT CẢ các vùng từ trên xuống dưới, trái sang phải.
+# Phần chung
+_COMMON_HEAD = """Phân tích ảnh MỘT TRANG đề thi. Liệt kê TẤT CẢ các vùng từ trên xuống dưới, trái sang phải.
 
 Mỗi vùng trả 1 object với:
 - "cls": một trong:
   • "exam_header"        : khối tiêu đề đầu đề (Sở GD, trường, môn, thời gian, mã đề, số câu)
   • "section_header"     : dòng "PHẦN I", "PHẦN II", "Phần A"...
-  • "group_instruction"  : câu dẫn chung cho nhiều câu ("Đọc đoạn sau trả lời câu 1-5", "Mark the letter...")
+  • "group_instruction"  : câu dẫn chung cho nhiều câu ("Mark the letter...", "Đọc đoạn sau trả lời câu 1-5")
   • "passage"            : đoạn văn/ngữ liệu dùng chung cho nhiều câu
-  • "question"           : khối MỘT câu hỏi (phần đề bài, KÈM hình/đồ thị/công thức của nó nếu có)
-  • "answer_option"      : MỘT ô đáp án (A. / B. / C. / D. hoặc a) b) c) d))
+  • "question"           : khối MỘT câu hỏi
   • "answer_key"         : bảng đáp án cuối đề (1.C 2.A ...)
   • "footer"             : số trang / chân trang (sẽ bị bỏ qua)
-- "box": [x1,y1,x2,y2] thang 0-1000, ôm KHÍT vùng đó.
-- Nếu cls="question": thêm "number" (số câu, ví dụ "Câu 5" → 5), "qtype"
-  (mcq_single|mcq_multi|true_false|fill_blank|essay), và 2 cờ "continues_from_prev"/"continues_to_next"
-  (true nếu câu bị cắt ở mép trên/dưới trang).
-- Nếu cls="answer_option": thêm "label" ("A"/"B"/"C"/"D"...).
-- Nếu cls="section_header": thêm "title".
-- Nếu cls="group_instruction" hoặc "section_header" và đọc được dải câu: thêm "covers_start","covers_end".
+- "box": [x1,y1,x2,y2] thang 0-1000, ôm KHÍT vùng đó."""
 
-QUY TẮC:
-- Với câu hỏi có hình/đồ thị: box của "question" phải BAO TRỌN cả hình đó.
-- Mỗi đáp án A/B/C/D là MỘT "answer_option" riêng, kể cả khi nằm cùng hàng.
-- KHÔNG bỏ sót câu nào. KHÔNG gộp 2 câu vào 1.
+# Biến thể KHÔNG tách đáp án (mặc định) — gom cả phương án vào trong "question"
+_QUESTION_RULES_NO_ANSWERS = """
+QUAN TRỌNG về "question":
+- Box của MỘT câu hỏi = từ dòng "Question N"/"Câu N" cho tới HẾT các phương án A/B/C/D của CHÍNH câu đó
+  (gộp cả đề bài + các lựa chọn vào MỘT vùng duy nhất). KHÔNG tách riêng từng đáp án.
+- Thêm "number" (số câu, ví dụ "Question 3" → 3) và "qtype"
+  (mcq_single|mcq_multi|true_false|fill_blank|essay).
+- MỖI dòng bắt đầu bằng "Question N"/"Câu N" là MỘT vùng RIÊNG. TUYỆT ĐỐI KHÔNG gộp 2 câu liền nhau
+  (vd Question 1 và Question 2) thành 1 vùng. Số vùng "question" = đúng số câu nhìn thấy.
+- Box DỪNG ngay sau phương án cuối cùng. KHÔNG kéo xuống ô/khung trả lời TRỐNG hay khoảng trắng phía dưới,
+  KHÔNG lấn sang câu kế tiếp.
+- Nếu câu bị cắt ở mép trên/dưới trang: đặt cờ "continues_from_prev"/"continues_to_next" = true."""
+
+# Biến thể CÓ tách đáp án
+_QUESTION_RULES_WITH_ANSWERS = """
+Thêm class:
+  • "answer_option"      : MỘT ô đáp án A/B/C/D (hoặc a/b/c/d), thêm "label" ("A"/"B"/"C"/"D").
+QUAN TRỌNG về "question":
+- Box "question" = phần ĐỀ BÀI (stem), KHÔNG gồm các phương án (phương án để riêng ở answer_option).
+- Thêm "number" và "qtype". MỖI "Question N"/"Câu N" là MỘT vùng RIÊNG, cấm gộp 2 câu.
+- Mỗi phương án A/B/C/D là MỘT "answer_option" riêng, kể cả khi nằm cùng hàng.
+- Cờ "continues_from_prev"/"continues_to_next" nếu câu vắt trang."""
+
+_COMMON_TAIL = """
+- "section_header": thêm "title". Nếu group/section đọc được dải câu: thêm "covers_start","covers_end".
+- KHÔNG bỏ sót câu nào.
 Trả về JSON đúng schema {"regions": [...]}."""
+
+
+def build_user_prompt(detect_answers: bool) -> str:
+    rules = _QUESTION_RULES_WITH_ANSWERS if detect_answers else _QUESTION_RULES_NO_ANSWERS
+    return _COMMON_HEAD + rules + _COMMON_TAIL
 
 
 def _meta_int(v) -> int | None:
@@ -46,7 +67,6 @@ def _meta_int(v) -> int | None:
 
 
 def gregion_to_region(g: GRegion, page_index: int, page_w: int, page_h: int) -> Region | None:
-    """Map 1 GRegion (0-1000) → Region (pixel)."""
     if not g.box or len(g.box) != 4:
         return None
     x1, y1, x2, y2 = g.box
@@ -75,10 +95,16 @@ def gregion_to_region(g: GRegion, page_index: int, page_w: int, page_h: int) -> 
     )
 
 
-def gpage_to_regions(page: GPage, page_index: int, page_w: int, page_h: int) -> list[Region]:
+def gpage_to_regions(
+    page: GPage, page_index: int, page_w: int, page_h: int,
+    drop_answers: bool = False,
+) -> list[Region]:
     out: list[Region] = []
     for g in page.regions:
         r = gregion_to_region(g, page_index, page_w, page_h)
-        if r is not None:
-            out.append(r)
+        if r is None:
+            continue
+        if drop_answers and r.cls == RegionClass.ANSWER_OPTION:
+            continue
+        out.append(r)
     return out

@@ -8,18 +8,15 @@ Phần cứng giả định: **RTX 5090 32GB**, WSL2 Ubuntu. Conda env: **`exam_
 
 ---
 
-## 1. Conda env + PyTorch (CUDA 12.8 cho Blackwell sm_120)
+## 1. Conda env
 
 ```bash
 conda create -n exam_parser_vlm python=3.11 -y
 conda activate exam_parser_vlm
-
-# PyTorch CUDA 12.8 — BẮT BUỘC cho RTX 5090 (Blackwell sm_120).
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
-
-# Kiểm tra GPU
-python -c "import torch; print('CUDA:', torch.cuda.is_available(), torch.cuda.get_device_name(0))"
 ```
+
+> KHÔNG cài `torch` thủ công ở đây. Pipeline parse KHÔNG dùng torch; chỉ vLLM dùng — và để
+> **vLLM tự kéo torch đúng CUDA** (xem §3) để tránh lệch `libcudart`.
 
 ## 2. Thư viện pipeline
 
@@ -30,47 +27,91 @@ pip install -r requirements.txt
 
 ## 3. vLLM + model Qwen3-VL-8B-AWQ
 
-vLLM serve chạy **tiến trình riêng** (1 terminal), pipeline gọi qua HTTP. Cài vLLM:
+vLLM serve chạy **tiến trình riêng** (1 terminal), pipeline gọi qua HTTP.
+
+> ⚠️ QUAN TRỌNG — tránh lỗi `libcudart.so.13: cannot open shared object file`:
+> torch và vLLM phải **cùng một phiên bản CUDA**. Cách chắc nhất là để **`uv` tự dò** theo driver,
+> KHÔNG cài torch cu128 thủ công trước rồi mới `pip install vllm` (sẽ lệch CUDA).
 
 ```bash
-# vLLM bản hỗ trợ CUDA 12.8 / Qwen3-VL. Nếu pip thường lỗi, dùng wheel cu128:
-pip install -U vllm
-# (nếu cần) pip install -U "transformers>=4.49" accelerate
+# xem driver hỗ trợ CUDA tối đa (góc trên phải)
+nvidia-smi
+
+# nếu đã lỡ cài torch/vllm trước đó, gỡ sạch cho khỏi lệch
+pip uninstall -y vllm torch torchvision xformers
+
+# cài vLLM + torch khớp CUDA tự động
+pip install uv
+uv pip install vllm --torch-backend=auto
+
+# kiểm tra torch thấy GPU 5090
+python -c "import torch; print(torch.__version__,'cuda',torch.version.cuda,torch.cuda.is_available(),torch.cuda.get_device_name(0))"
 ```
 
-Tải model tự động ở lần serve đầu (từ HuggingFace). Nếu mạng chậm, set HF cache:
-```bash
-export HF_HOME=~/.cache/huggingface
-```
+- Nếu dòng trên in `True` + `NVIDIA GeForce RTX 5090` → OK.
+- Nếu in `False`: driver quá cũ cho CUDA mặc định của vLLM → ép cu128:
+  `uv pip install vllm --torch-backend=cu128`
+- Không muốn dùng `uv`: thay 2 lệnh cài bằng `pip install vllm` (vLLM tự kéo torch khớp với nó).
 
-### 3.1 Khởi động vLLM (TERMINAL RIÊNG, để chạy nền)
+Model tải tự động lần serve đầu (HuggingFace). Mạng chậm thì set: `export HF_HOME=~/.cache/huggingface`
+
+### 3.1 Khởi động vLLM (TERMINAL RIÊNG)
+
+> **Cấu hình ĐÃ CHẠY ĐƯỢC trên 5090 với ~17.8GB free (Windows chiếm ~13.5GB).**
+> Dùng **4B-FP8** vì 8B-FP8 (~10GB) + activation vision profiling vượt 17.8GB free → KV cache âm.
+> Lệnh **1 dòng** (KHÔNG dán kèm comment, sẽ vỡ nối dòng):
 
 ```bash
 conda activate exam_parser_vlm
-vllm serve Qwen/Qwen3-VL-8B-Instruct-AWQ \
-  --gpu-memory-utilization 0.55 \      # chừa ~13GB của Windows; 0.55*32 ≈ 17.6GB
-  --max-model-len 8192 \
-  --limit-mm-per-prompt image=1 \
-  --port 8000
+pkill -f "vllm serve"; sleep 3                 # dọn tiến trình cũ còn giữ VRAM
+export VLLM_USE_FLASHINFER_SAMPLER=0           # Blackwell: tắt FlashInfer sampler (báo nhầm "requires sm75")
+vllm serve Qwen/Qwen3-VL-4B-Instruct-FP8 --gpu-memory-utilization 0.55 --max-model-len 16384 --enforce-eager --max-num-seqs 1 --limit-mm-per-prompt '{"image":1}' --mm-processor-kwargs '{"max_pixels":2304000}' --port 8001
 ```
 
-Giải thích cờ:
-- `--gpu-memory-utilization 0.55`: **quan trọng** — vLLM mặc định chiếm 90% GPU sẽ đụng 13GB của
-  Windows → OOM. Hạ xuống ~0.55 để nằm gọn trong 19GB trống. Nếu vẫn OOM, hạ tiếp 0.5/0.45.
-- `--limit-mm-per-prompt image=1`: mỗi prompt 1 ảnh (ta gửi 1 trang/lượt) → tiết kiệm KV cache.
-- `--max-model-len 8192`: đủ cho 1 trang + JSON output.
+Cập nhật `.env` cho khớp:
+```
+VLM_BASE_URL=http://localhost:8001/v1
+VLM_MODEL=Qwen/Qwen3-VL-4B-Instruct-FP8
+VLM_MAX_PIXELS=2304000
+```
 
-Kiểm tra server sống:
+Giải thích các cờ (đều cần để vượt qua chuỗi lỗi đã gặp):
+- `VLLM_USE_FLASHINFER_SAMPLER=0` — **bắt buộc trên Blackwell sm_120**: FlashInfer báo nhầm
+  `requires sm75` → tắt sampler này, dùng sampler native.
+- `--enforce-eager` — **bắt buộc khi VRAM hẹp**: bỏ CUDA graph (ngốn nhiều GB) → dành cho KV cache.
+  Thiếu cờ này → lỗi `No available memory for the cache blocks` (KV cache âm).
+- `--gpu-memory-utilization 0.55` — 0.55×32≈17.6GB, vừa khít 17.8GB free. ĐỪNG đẩy 0.6 (=19.6GB > free → OOM).
+- `--mm-processor-kwargs '{"max_pixels":2304000}'` — chặn độ phân giải ảnh để activation vừa VRAM;
+  4B còn dư VRAM nên để ~2.3M (cao) giúp model nhỏ nhìn rõ marker → bù độ chính xác grounding.
+- `--max-num-seqs 1` — xử lý 1 trang/lượt, không cần batch.
+- `--max-model-len 16384` — phải đủ cho vision tokens + prompt + **output JSON của trang nhiều câu**
+  (đề Tiếng Anh ~250 region). Thấp quá (vd 4096) → JSON bị cắt → lỗi `Expecting ',' delimiter`.
+- `--limit-mm-per-prompt '{"image":1}'` — mỗi prompt 1 ảnh (bản vLLM mới yêu cầu JSON).
+
+Kiểm tra server sống (đúng port 8001):
 ```bash
-curl http://localhost:8000/v1/models
+curl http://localhost:8001/v1/models
 ```
 
-### 3.2 (Khi đã giải phóng được 13GB) nâng lên 32B
+> ⚠️ Cảnh báo `SM 12.x requires CUDA >= 12.9` trong log: torch hiện là CUDA 12.8, hơi thiếu cho
+> Blackwell. Không chặn chạy, nhưng nếu sau này gặp lỗi kernel lạ thì nâng torch/vLLM lên build CUDA 12.9+.
+
+### 3.2 Nâng cấp model khi có thêm VRAM (grounding tốt hơn — KHÔNG cần sửa code)
+
+4B chỉ là model bootstrap cho VRAM hiện tại. Khi **giải phóng được 13GB phía Windows** (tắt model
+kia), có ~30GB → lên model lớn để grounding chính xác hơn:
+
 ```bash
-vllm serve Qwen/Qwen3-VL-32B-Instruct-AWQ \
-  --gpu-memory-utilization 0.9 --max-model-len 8192 --limit-mm-per-prompt image=1 --port 8000
-# rồi đổi VLM_MODEL trong .env → Qwen/Qwen3-VL-32B-Instruct-AWQ  (KHÔNG cần sửa code)
+# 8B-FP8 (cần ~free 16GB+)
+vllm serve Qwen/Qwen3-VL-8B-Instruct-FP8 --gpu-memory-utilization 0.6 --max-model-len 4096 --enforce-eager --max-num-seqs 1 --limit-mm-per-prompt '{"image":1}' --mm-processor-kwargs '{"max_pixels":2304000}' --port 8001
+
+# 32B-FP8 (cần ~free 35GB+ → phải giải phóng hết Windows; có thể bỏ --enforce-eager nếu dư VRAM)
+vllm serve Qwen/Qwen3-VL-32B-Instruct-FP8 --gpu-memory-utilization 0.9 --max-model-len 8192 --limit-mm-per-prompt '{"image":1}' --port 8001
 ```
+Rồi chỉ đổi `VLM_MODEL` trong `.env` (KHÔNG sửa code). Nếu repo `-FP8` không có thì thử `-Instruct`
+(BF16, nặng hơn) hoặc kiểm tra tên qua lệnh list ở §3.
+
+> So sánh nhanh theo VRAM: 4B-FP8 ~5GB · 8B-FP8 ~10GB · 32B-FP8 ~33GB (cộng activation + KV).
 
 ## 4. (Tùy chọn) Backend Ollama thay cho vLLM
 
@@ -119,15 +160,23 @@ hình không; mở `crops/` xem ảnh cắt ra. So với project paddle cũ.
 ## 7. Checklist nhanh
 ```bash
 python -c "import torch; print(torch.cuda.is_available())"   # True
-curl http://localhost:8000/v1/models                          # vLLM sống (nếu dùng vllm)
+curl http://localhost:8001/v1/models                          # vLLM sống (port 8001)
 python scripts/parse_cli.py input/<đề>.pdf                     # ra output/
 ```
 
-## 8. Sự cố thường gặp
+## 8. Sự cố thường gặp (đã gặp & cách xử lý — theo đúng thứ tự lúc dựng)
 | Lỗi | Nguyên nhân | Cách xử lý |
 |---|---|---|
-| vLLM OOM khi khởi động | util quá cao, đụng 13GB Windows | hạ `--gpu-memory-utilization` 0.5/0.45 |
-| `CUDA error: no kernel image` | torch không phải cu128 | cài lại torch theta `--index-url .../cu128` |
+| `libcudart.so.13: cannot open shared object file` | torch (cu128) lệch CUDA với vLLM (cu13) | gỡ hết rồi `uv pip install vllm --torch-backend=auto` (§3) |
+| `--max-model-len: command not found` | dán lệnh kèm comment `# ...` sau `\` → vỡ nối dòng | dùng lệnh 1 dòng ở §3.1 |
+| `--limit-mm-per-prompt: Value image=1 cannot be converted` | bản vLLM mới cần JSON | `--limit-mm-per-prompt '{"image":1}'` |
+| `Address already in use` | tiến trình vLLM cũ còn sống | `pkill -f "vllm serve"` hoặc `fuser -k 8001/tcp`, hoặc đổi `--port` |
+| `RepositoryNotFound / 401` model | tên repo sai (bản `-AWQ` không có) | dùng `-FP8`; list repo bằng lệnh ở §3 |
+| `FlashInfer requires GPUs with sm75 or higher` | FlashInfer chưa nhận Blackwell sm_120 (báo nhầm) | `export VLLM_USE_FLASHINFER_SAMPLER=0`; hoặc `pip uninstall -y flashinfer-python` |
+| `No available memory for the cache blocks` (KV cache âm) | VRAM hẹp + CUDA graph/vision activation ngốn hết | `--enforce-eager` + `--mm-processor-kwargs '{"max_pixels":...}'` + giảm model về 4B (§3.1) |
+| `Expecting ',' delimiter` khi parse JSON (đề nhiều câu) | output JSON vượt context → bị cắt cụt | tăng `--max-model-len` (vd 16384); xem `vlm_raw/*.json` thấy JSON đứt cuối |
+| `SM 12.x requires CUDA >= 12.9` (warning) | torch CUDA 12.8 hơi thiếu cho Blackwell | thường bỏ qua được; lỗi kernel lạ thì nâng torch/vLLM build CUDA 12.9+ |
+| `CUDA error: no kernel image` | torch không hỗ trợ sm_120 | cài torch CUDA mới qua vLLM (§3), không pin cu cũ |
 | Kết nối `localhost:8000` fail | chưa `vllm serve` | mở terminal riêng chạy §3.1 |
 | VLM trả JSON sai schema | model nhỏ/độ phân giải thấp | tăng `VLM_MAX_PIXELS`, hoặc đổi model lớn hơn |
 | Box lệch nhiều | độ phân giải gửi VLM thấp | tăng `VLM_MAX_PIXELS`; bật `SNAP_ENABLED=true` |

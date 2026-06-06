@@ -25,14 +25,18 @@ class Settings(BaseSettings):
     ollama_model: str = "qwen3-vl:8b"
 
     # --- VLM chung ---
-    vlm_timeout: int = 180
-    vlm_max_pixels: int = 1_500_000         # giới hạn pixel ảnh gửi VLM
+    vlm_timeout: int = 600                  # giây/trang (trang dày sinh JSON lâu)
+    vlm_max_pixels: int = 2_304_000         # giới hạn pixel ảnh gửi VLM (khớp vLLM max_pixels)
     vlm_temperature: float = 0.0
+    vlm_max_output_tokens: int = 6000       # chặn output để 1 trang không sinh vô tận
 
     # --- Preprocess ---
     render_dpi: int = 300
     do_deskew: bool = True
     deskew_threshold_degrees: float = 0.5
+
+    # --- Detection scope ---
+    detect_answers: bool = False        # False = chỉ khoanh vùng câu hỏi trọn vẹn (chưa tách đáp án)
 
     # --- Box-snap ---
     snap_pad: int = 8

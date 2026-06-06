@@ -13,7 +13,7 @@ from src.core.config import settings
 from src.core.logging import logger
 from src.detectors.base import RegionDetector
 from src.detectors.image_util import data_url
-from src.detectors.prompt import SYSTEM_PROMPT, USER_PROMPT, gpage_to_regions
+from src.detectors.prompt import SYSTEM_PROMPT, build_user_prompt, gpage_to_regions
 from src.detectors.schema import GPage
 from src.schemas.region import Region
 
@@ -34,6 +34,8 @@ class VLLMDetector(RegionDetector):
         )
         self._model = settings.vlm_model
         self._schema = GPage.model_json_schema()
+        self._detect_answers = settings.detect_answers
+        self._user_prompt = build_user_prompt(self._detect_answers)
         # Lưu raw để debug (pipeline đọc ra ghi file)
         self.last_raw: Optional[str] = None
 
@@ -45,12 +47,13 @@ class VLLMDetector(RegionDetector):
             resp = self._client.chat.completions.create(
                 model=self._model,
                 temperature=settings.vlm_temperature,
+                max_tokens=settings.vlm_max_output_tokens,
                 messages=[
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {
                         "role": "user",
                         "content": [
-                            {"type": "text", "text": USER_PROMPT},
+                            {"type": "text", "text": self._user_prompt},
                             {"type": "image_url", "image_url": {"url": url}},
                         ],
                     },
@@ -75,6 +78,7 @@ class VLLMDetector(RegionDetector):
                 logger.error(f"[vllm] trang {page_index}: parse JSON lỗi — {e}")
                 return []
 
-        regions = gpage_to_regions(page, page_index, page_w, page_h)
+        regions = gpage_to_regions(page, page_index, page_w, page_h,
+                                   drop_answers=not self._detect_answers)
         logger.info(f"[vllm] trang {page_index}: {len(regions)} vùng")
         return regions

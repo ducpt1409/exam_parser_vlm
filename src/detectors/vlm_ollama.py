@@ -14,7 +14,7 @@ from src.core.config import settings
 from src.core.logging import logger
 from src.detectors.base import RegionDetector
 from src.detectors.image_util import encode_jpeg_b64
-from src.detectors.prompt import SYSTEM_PROMPT, USER_PROMPT, gpage_to_regions
+from src.detectors.prompt import SYSTEM_PROMPT, build_user_prompt, gpage_to_regions
 from src.detectors.schema import GPage
 from src.schemas.region import Region
 
@@ -26,6 +26,8 @@ class OllamaDetector(RegionDetector):
         self._url = f"{settings.ollama_host}/api/chat"
         self._model = settings.ollama_model
         self._schema = GPage.model_json_schema()
+        self._detect_answers = settings.detect_answers
+        self._user_prompt = build_user_prompt(self._detect_answers)
         self.last_raw: Optional[str] = None
 
     def detect_page(self, image: Image.Image, page_index: int) -> list[Region]:
@@ -36,10 +38,13 @@ class OllamaDetector(RegionDetector):
             "model": self._model,
             "stream": False,
             "format": self._schema,
-            "options": {"temperature": settings.vlm_temperature},
+            "options": {
+                "temperature": settings.vlm_temperature,
+                "num_predict": settings.vlm_max_output_tokens,
+            },
             "messages": [
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": USER_PROMPT, "images": [b64]},
+                {"role": "user", "content": self._user_prompt, "images": [b64]},
             ],
         }
 
@@ -64,6 +69,7 @@ class OllamaDetector(RegionDetector):
                 logger.error(f"[ollama] trang {page_index}: parse JSON lỗi — {e}")
                 return []
 
-        regions = gpage_to_regions(page, page_index, page_w, page_h)
+        regions = gpage_to_regions(page, page_index, page_w, page_h,
+                                   drop_answers=not self._detect_answers)
         logger.info(f"[ollama] trang {page_index}: {len(regions)} vùng")
         return regions

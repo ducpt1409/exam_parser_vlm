@@ -12,6 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional
 
+from src.core.config import settings
 from src.core.logging import logger
 from src.schemas.exam import (
     Answer,
@@ -215,8 +216,17 @@ def build_document(
         xl, xr = rec["bounds"]
         ans_regs = sorted(answers_by_q[q_id], key=lambda r: (r.bbox[1], r.bbox[0]))
 
-        # full box = cột × band
-        full_box: BBox = (xl, rec["y_top"], xr, rec["band_bottom"])
+        # full box = cột (ngang) × [đỉnh câu, đáy].
+        # - detect_answers=False: box VLM đã ôm trọn câu (đề+phương án) và được dặn DỪNG ở phương án
+        #   cuối → dùng mép dưới VLM (cap trong band) để KHÔNG nuốt ô trắng dưới / câu kế.
+        # - detect_answers=True: question chỉ là stem → dùng nguyên band (gồm cả các đáp án bên dưới).
+        band_bottom = rec["band_bottom"]
+        vlm_bottom = rec["region"].bbox[3]
+        if not settings.detect_answers and vlm_bottom > rec["y_top"] + 5:
+            full_bottom = min(band_bottom, vlm_bottom + 8)   # +8px chừa chân chữ; cap trong band
+        else:
+            full_bottom = band_bottom
+        full_box: BBox = (xl, rec["y_top"], xr, full_bottom)
         # stem = từ đỉnh câu tới đáp án đầu (nếu có)
         if ans_regs:
             first_ans_top = min(a.bbox[1] for a in ans_regs)
