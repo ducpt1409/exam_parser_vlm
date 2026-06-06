@@ -19,9 +19,9 @@ from src.services.assembly import AssemblyResult, Part
 from src.services.box_snap import PageInk
 
 # Màu overlay
-C_QUESTION = (30, 90, 220)    # 🔵 full câu
-C_STEM = (150, 30, 200)       # 🟣 stem
-C_ANSWER = (30, 160, 60)      # 🟢 đáp án
+C_QUESTION = (150, 30, 200)   # 🟣 TÍM — full câu hỏi
+C_STEM = (30, 90, 220)        # 🔵 XANH DƯƠNG — stem (đề bài)
+C_ANSWER = (30, 160, 60)      # 🟢 XANH LÁ — đáp án A/B/C/D
 C_GROUP = (220, 30, 30)       # 🔴 group
 C_HEADER = (230, 140, 0)      # 🟠 header
 LINE_W = 3

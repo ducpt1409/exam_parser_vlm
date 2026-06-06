@@ -227,12 +227,13 @@ def build_document(
         else:
             full_bottom = band_bottom
         full_box: BBox = (xl, rec["y_top"], xr, full_bottom)
-        # stem = từ đỉnh câu tới đáp án đầu (nếu có)
+        # stem = từ đỉnh câu tới đáp án đầu (nếu có); nếu chưa có đáp án thì dùng box stem
+        # của VLM (đề bài) để stem KHÁC full, thay vì = full.
         if ans_regs:
             first_ans_top = min(a.bbox[1] for a in ans_regs)
             stem_box: BBox = (xl, rec["y_top"], xr, max(rec["y_top"] + 1, first_ans_top))
         else:
-            stem_box = full_box
+            stem_box = rec["region"].bbox
 
         qtype, review = _infer_type(rec["region"].qtype, len(ans_regs))
         answers = [Answer(label=(a.label or "?")) for a in ans_regs]
