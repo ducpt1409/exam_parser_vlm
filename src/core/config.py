@@ -36,11 +36,14 @@ class Settings(BaseSettings):
     deskew_threshold_degrees: float = 0.5
 
     # --- Detection scope ---
-    detect_answers: bool = False        # False = chỉ khoanh vùng câu hỏi trọn vẹn (chưa tách đáp án)
+    detect_answers: bool = True         # detect cả đáp án A/B/C/D (KHÔNG detect lời giải)
 
     # --- Box-snap ---
     snap_pad: int = 8
     snap_enabled: bool = True
+    # Mở rộng vùng tìm ink trước khi snap (tỉ lệ theo chiều cao/rộng trang) → cứu phân số/tích phân bị cắt.
+    snap_expand_y_ratio: float = 0.012  # ~ +1.2% chiều cao mỗi phía
+    snap_expand_x_ratio: float = 0.004  # ~ +0.4% chiều rộng mỗi phía
 
     # --- Output ---
     output_dir: str = "./output"

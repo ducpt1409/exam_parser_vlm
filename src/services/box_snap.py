@@ -24,9 +24,15 @@ class PageInk:
         _, th = cv2.threshold(arr, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
         self.ink = (th > 0).astype(np.uint8)   # HxW, {0,1}
 
-    def snap(self, bbox: BBox, pad: int = 8) -> BBox:
-        """Snap bbox về hộp bao ink bên trong nó. Không có ink → trả bbox clamp."""
+    def snap(self, bbox: BBox, pad: int = 8, expand_x: int = 0, expand_y: int = 0) -> BBox:
+        """Snap bbox về hộp bao ink. Mở rộng vùng TÌM (expand) trước khi snap để cứu nội dung
+        bị box VLM cắt (vd tử số phân số, đỉnh tích phân). Không có ink → trả bbox clamp."""
         x1, y1, x2, y2 = clamp_bbox(bbox, self.width, self.height)
+        if expand_x or expand_y:
+            x1, y1, x2, y2 = clamp_bbox(
+                (x1 - expand_x, y1 - expand_y, x2 + expand_x, y2 + expand_y),
+                self.width, self.height,
+            )
         ix1, iy1, ix2, iy2 = int(x1), int(y1), int(x2), int(y2)
         if ix2 - ix1 < 2 or iy2 - iy1 < 2:
             return (x1, y1, x2, y2)

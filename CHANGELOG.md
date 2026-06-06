@@ -1,5 +1,35 @@
 # Changelog — exam_parser_vlm
 
+## [Phase 3.2] - 2026-06-06 - Bật lại đáp án A/B/C/D + cứu công thức bị cắt + nối ảnh vắt trang
+
+### Làm rõ yêu cầu
+- "đáp án" = phương án A/B/C/D (KHÔNG phải lời giải). CẦN: câu hỏi + full câu hỏi + đáp án.
+  KHÔNG detect phần lời giải/hướng dẫn giải.
+
+### Vấn đề (4B-FP8, đề toán Azota)
+- Tắt đáp án (3.1) làm mất hết phương án trong crop.
+- Câu/đáp án có phân số/tích phân bị **cắt lẹm mép trên & chiều cao**.
+- Câu 45 (có đồ thị): full crop không bao hình + bỏ qua đáp án.
+- Đáp án vắt trang chưa được nối ảnh.
+
+### Giải pháp
+- **`DETECT_ANSWERS` mặc định = true** → detect lại A/B/C/D. Prompt thêm: BỎ QUA lời giải;
+  box bao TRỌN công thức (cả tử/mẫu phân số, tích phân, căn); bao cả hình; set cờ vắt trang.
+- **Full câu = băng full-height [đỉnh câu → đỉnh câu kế] + snap ink** (không cap theo box VLM khi
+  answers on) → tự bao hình (Câu 45), phân số, đủ đáp án; không cắt lẹm.
+- **Box-snap có `expand`** (`box_snap.py`): mở rộng vùng tìm ink trước khi snap → cứu tử số phân số/
+  đỉnh tích phân bị box VLM cắt. CHỈ áp cho crop ĐÁP ÁN (full là băng nên không expand → tránh nuốt câu kế).
+  Config: `snap_expand_y_ratio`, `snap_expand_x_ratio`.
+- **Cross-page nối ảnh** (`crosspage.py`): thêm Ca 3 — heuristic phát hiện đuôi câu ở đầu trang sau
+  (khoảng trống lớn trên câu đầu + không có header/section chen) → nối mảnh, cropper ghép dọc như paddle.
+  Nhận thêm `regions_per_page`.
+
+### Cần làm (người dùng)
+- Sửa `.env`: `DETECT_ANSWERS=true` (bản cũ đang false). KHÔNG cần serve lại vLLM.
+- Chạy lại 3 đề, soi `overlay/` (full câu bao đủ hình/công thức/đáp án; câu vắt trang được nối).
+
+---
+
 ## [Phase 3.1] - 2026-06-06 - Bỏ detect đáp án (mặc định) + prompt cứng + cap box theo VLM
 
 ### Vấn đề (chạy thật đề Tiếng Anh, 4B-FP8)

@@ -51,6 +51,16 @@ QUAN TRỌNG về "question":
 _COMMON_TAIL = """
 - "section_header": thêm "title". Nếu group/section đọc được dải câu: thêm "covers_start","covers_end".
 - KHÔNG bỏ sót câu nào.
+
+LƯU Ý QUAN TRỌNG:
+- BỎ QUA HOÀN TOÀN phần LỜI GIẢI / HƯỚNG DẪN GIẢI CHI TIẾT / ĐÁP ÁN CHI TIẾT (thường ở cuối đề) —
+  KHÔNG tạo vùng cho chúng. CHỈ lấy đề bài (câu hỏi + phương án).
+- Box phải BAO TRỌN công thức toán: phân số nhiều tầng (cả TỬ SỐ phía trên lẫn MẪU SỐ phía dưới),
+  dấu tích phân, căn, ma trận — KHÔNG được cắt lẹm phần trên/dưới của công thức.
+- Câu hỏi có HÌNH/ĐỒ THỊ: box phải bao cả hình.
+- Nếu một câu (hoặc các phương án của nó) bị cắt ở MÉP DƯỚI trang (còn tiếp trang sau):
+  đặt "continues_to_next"=true cho câu đó. Nếu PHẦN ĐẦU trang là phần tiếp của câu trang trước:
+  đặt "continues_from_prev"=true cho câu đầu trang.
 Trả về JSON đúng schema {"regions": [...]}."""
 
 

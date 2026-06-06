@@ -86,8 +86,8 @@ def parse_exam(
     # [4] Assembly → DOM
     result = asm.build_document(regions_per_page, page_sizes, exam_id, src.name, backend)
 
-    # [5] Cross-page merge
-    merge_cross_page(result, page_sizes)
+    # [5] Cross-page merge (nối ảnh câu vắt trang)
+    merge_cross_page(result, page_sizes, regions_per_page)
 
     # [7] Crop + overlay (snap áp dụng tại đây)
     crop_all(result, images, page_inks, out_dir, snap, settings.snap_pad)

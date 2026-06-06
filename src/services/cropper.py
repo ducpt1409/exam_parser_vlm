@@ -11,6 +11,7 @@ from typing import Optional
 
 from PIL import Image, ImageDraw
 
+from src.core.config import settings
 from src.core.logging import logger
 from src.schemas.exam import CropImage
 from src.schemas.geometry import BBox, clamp_bbox
@@ -26,10 +27,14 @@ C_HEADER = (230, 140, 0)      # 🟠 header
 LINE_W = 3
 
 
-def _snap_box(part: Part, page_inks: list[PageInk], snap: bool, pad: int) -> BBox:
-    if snap and 0 <= part.page_index < len(page_inks):
-        return page_inks[part.page_index].snap(part.bbox, pad)
+def _snap_box(part: Part, page_inks: list[PageInk], snap: bool, pad: int, expand: bool = False) -> BBox:
     pi = page_inks[part.page_index]
+    if snap and 0 <= part.page_index < len(page_inks):
+        # expand=True chỉ cho ĐÁP ÁN (box VLM hay cắt phân số). Full câu là băng full-height,
+        # KHÔNG expand để khỏi nuốt câu trên/dưới.
+        ex = int(settings.snap_expand_x_ratio * pi.width) if expand else 0
+        ey = int(settings.snap_expand_y_ratio * pi.height) if expand else 0
+        return pi.snap(part.bbox, pad, expand_x=ex, expand_y=ey)
     return clamp_bbox(part.bbox, pi.width, pi.height)
 
 
@@ -55,6 +60,7 @@ def _make_crop(
     parts: list[Part], images: list[Image.Image], page_inks: list[PageInk],
     out_dir: Path, rel_name: str, snap: bool, pad: int,
     overlay_acc: dict[int, list[tuple[BBox, tuple]]], color: tuple,
+    expand: bool = False,
 ) -> Optional[CropImage]:
     """Crop (snap) các part → lưu PNG → CropImage. Ghi nhận bbox vào overlay_acc."""
     snapped: list[tuple[int, BBox]] = []
@@ -62,7 +68,7 @@ def _make_crop(
     for part in parts:
         if part.page_index >= len(images):
             continue
-        b = _snap_box(part, page_inks, snap, pad)
+        b = _snap_box(part, page_inks, snap, pad, expand)
         c = _crop_one(images[part.page_index], b)
         if c is None:
             continue
@@ -106,7 +112,8 @@ def crop_all(
                                   f"q{n}_stem.png", snap, pad, overlay_acc, C_STEM)
         for ai, (label, parts) in enumerate(lay.answer_parts):
             ci = _make_crop(parts, images, page_inks, out_dir,
-                            f"q{n}_{label}.png", snap, pad, overlay_acc, C_ANSWER)
+                            f"q{n}_{label}.png", snap, pad, overlay_acc, C_ANSWER,
+                            expand=True)
             if ai < len(q.answers):
                 q.answers[ai].image = ci
 
